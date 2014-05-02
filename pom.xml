@@ -9,7 +9,7 @@
 
 	<groupId>io.github.zenmoto</groupId>
 	<artifactId>metrics-splunk</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>0.0.2-SNAPSHOT</version>
 	<name>${project.artifactId}</name>
 	<description>A Metrics reporter for Splunk</description>
 	<url>https://github.com/zenmoto/metrics-splunk</url>
@@ -44,6 +44,7 @@
       <groupId>com.google.code.gson</groupId>
       <artifactId>gson</artifactId>
       <version>2.2.3</version>
+      <scope>test</scope>
     </dependency>
 		<dependency>
 			<groupId>com.codahale.metrics</groupId>
@@ -51,6 +52,11 @@
 			<version>3.0.1</version>
 			<scope>provided</scope>
 		</dependency>
+    <dependency>
+      <groupId>com.codahale.metrics</groupId>
+      <artifactId>metrics-json</artifactId>
+      <version>3.0.1</version>
+    </dependency>
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-api</artifactId>

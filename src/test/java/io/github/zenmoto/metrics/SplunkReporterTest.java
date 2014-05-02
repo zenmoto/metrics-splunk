@@ -1,48 +1,76 @@
 package io.github.zenmoto.metrics;
 
-import com.codahale.metrics.Counter;
 import com.codahale.metrics.MetricRegistry;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.splunk.Args;
 import com.splunk.Receiver;
 import com.splunk.Service;
+import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
-import org.mockito.stubbing.OngoingStubbing;
 
-import static org.fest.assertions.api.Assertions.assertThat;
-import static org.hamcrest.CoreMatchers.nullValue;
-import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.notNull;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static junit.framework.Assert.assertNotNull;
+import static junit.framework.TestCase.assertTrue;
+import static org.hamcrest.core.Is.is;
+import static org.junit.Assert.assertThat;
+import static org.mockito.Mockito.*;
 
 public class SplunkReporterTest {
-    @Test
-    public void testReport() throws Exception {
-        Service splunk = mock(Service.class);
-        Receiver receiver = mock(Receiver.class);
+    private Service splunk;
+    private Receiver receiver;
+    private MetricRegistry reg;
+    private JsonParser parser = new JsonParser();
+
+    @Before
+    public void setup() throws Exception {
+        splunk = mock(Service.class);
+        receiver = mock(Receiver.class);
         when(splunk.getReceiver()).thenReturn(receiver);
 
-        MetricRegistry reg = new MetricRegistry();
+        reg = new MetricRegistry();
 
         reg.counter("tcounter").inc();
         reg.meter("tmeter").mark();
         reg.histogram("thist").update(10);
         reg.histogram("thist").update(1);
         reg.timer("ttimer").time().stop();
+    }
 
+    @Test
+    public void testReport() throws Exception {
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         SplunkReporter reporter = SplunkReporter.forRegistry(reg).build(splunk);
         reporter.report();
 
-        verify(receiver).submit(captor.capture());
-        JsonElement parsed = new JsonParser().parse(captor.getValue());
-        System.err.println(captor.getValue());
-        assertThat(parsed).isNotNull();
+        verify(receiver).submit(anyString(), any(Args.class), captor.capture());
+        JsonObject parsed = parser.parse(captor.getValue()).getAsJsonObject();
+        assertNotNull(parsed);
+        assertTrue(parsed.has("timers"));
+        assertTrue(parsed.has("meters"));
+        assertTrue(parsed.has("histograms"));
+        assertTrue(parsed.has("timers"));
+    }
 
+    @Test
+    public void testSplunkSettings() throws Exception {
+        String index = "testIndex";
+        String source = "crazySource";
+        String sourcetype = "interestingSourcetype";
+
+        SplunkReporter reporter = SplunkReporter.forRegistry(reg)
+                .withIndex(index)
+                .withSource(source)
+                .withSourcetype(sourcetype)
+                .build(splunk);
+        ArgumentCaptor<String> indexCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Args> argsCaptor = ArgumentCaptor.forClass(Args.class);
+
+        reporter.report();
+        verify(receiver).submit(indexCaptor.capture(), argsCaptor.capture(), anyString());
+        assertThat(indexCaptor.getValue(), is(index));
+        Args supplied = argsCaptor.getValue();
+        assertThat((String)supplied.get("sourcetype"), is(sourcetype));
     }
 
 }

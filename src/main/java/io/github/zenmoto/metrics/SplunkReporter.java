@@ -1,11 +1,14 @@
 package io.github.zenmoto.metrics;
 
 import com.codahale.metrics.*;
-import com.google.gson.JsonObject;
+import com.codahale.metrics.json.MetricsModule;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.splunk.Args;
 import com.splunk.Receiver;
 import com.splunk.Service;
-import io.github.zenmoto.metrics.formatters.*;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.concurrent.TimeUnit;
@@ -15,33 +18,51 @@ import java.util.concurrent.TimeUnit;
  */
 public class SplunkReporter extends ScheduledReporter {
 
-    private final Service splunk;
     private final Receiver receiver;
+    private final ObjectMapper mapper;
+    private final boolean showSamples;
+    private final String index;
+    private final Args splunkArgs = new Args();
+    private final Map<String, Object> extraAttributes;
 
-    public SplunkReporter(MetricRegistry registry, Service splunk, String prefix, TimeUnit rateUnit, TimeUnit durationUnit, MetricFilter filter) {
-        super(registry, prefix, filter, rateUnit, durationUnit);
-        this.splunk = splunk;
+    public SplunkReporter(Builder builder, Service splunk) {
+        super(builder.registry, builder.prefix, builder.filter, builder.rateUnit, builder.durationUnit);
         receiver = splunk.getReceiver();
+        this.showSamples = builder.showSamples;
+        splunkArgs.put("source", builder.source);
+        splunkArgs.put("sourcetype", builder.sourcetype);
+        this.index = builder.index;
+        this.extraAttributes = builder.extraAttributes;
+        mapper = new ObjectMapper().registerModule(new MetricsModule(builder.rateUnit, builder.durationUnit, this.showSamples));
     }
 
     @Override
     public void report(SortedMap<String, Gauge> gauges, SortedMap<String, Counter> counters, SortedMap<String, Histogram> histograms, SortedMap<String, Meter> meters, SortedMap<String, Timer> timers) {
-        JsonObject o = new JsonObject();
-        o.addProperty("type", "metric");
-        addMetricToReport(o, "g", new GaugeJsonFormatter(), gauges);
-        addMetricToReport(o, "c", new CounterJsonFormatter(), counters);
-        addMetricToReport(o, "h", new HistogramJsonFormatter(), histograms);
-        addMetricToReport(o, "m", new MeterJsonFormatter(), meters);
-        addMetricToReport(o, "t", new TimerJsonFormatter(), timers);
-        receiver.submit(o.toString());
-    }
-
-    private <T> void addMetricToReport(JsonObject o, String label, JsonFormatter<T> f, SortedMap<String, T> values) {
-        JsonObject sub = new JsonObject();
-        for (Map.Entry<String, T> obj : values.entrySet()) {
-            sub.add(obj.getKey(), f.format(obj.getValue()));
+        Map<String, Object> result = new HashMap<String, Object>();
+        if (gauges.size() > 0) {
+            result.put("gauges", gauges);
         }
-        o.add(label, sub);
+        if (counters.size() > 0) {
+            result.put("counters", counters);
+        }
+        if (histograms.size() > 0) {
+            result.put("histograms", histograms);
+        }
+        if (meters.size() > 0) {
+            result.put("meters", meters);
+        }
+        if (timers.size() > 0) {
+            result.put("timers", timers);
+        }
+        for (Map.Entry<String, Object> entry : extraAttributes.entrySet()) {
+            result.put(entry.getKey(), entry.getValue());
+        }
+        try {
+            receiver.submit(index, splunkArgs, mapper.writeValueAsString(result));
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Error in serializing metrics to JSON", e);
+            // TODO: figure out what to do here.
+        }
     }
 
     /**
@@ -57,17 +78,18 @@ public class SplunkReporter extends ScheduledReporter {
 
     public static class Builder {
         private final MetricRegistry registry;
-        private String prefix;
-        private TimeUnit rateUnit;
-        private TimeUnit durationUnit;
-        private MetricFilter filter;
+        private String prefix = null;
+        private TimeUnit rateUnit = TimeUnit.SECONDS;
+        private TimeUnit durationUnit = TimeUnit.MILLISECONDS;
+        private MetricFilter filter = MetricFilter.ALL;
+        private String index = null;
+        public boolean showSamples = false;
+        public String source = "metrics";
+        private String sourcetype = "metrics";
+        private Map<String, Object> extraAttributes = new HashMap<String, Object>();
 
         private Builder(MetricRegistry registry) {
             this.registry = registry;
-            this.prefix = null;
-            this.rateUnit = TimeUnit.SECONDS;
-            this.durationUnit = TimeUnit.MILLISECONDS;
-            this.filter = MetricFilter.ALL;
         }
 
         /**
@@ -83,6 +105,37 @@ public class SplunkReporter extends ScheduledReporter {
         }
 
         /**
+         * The source to be specified on events published to Splunk
+         * @param source
+         * @return {@code this}
+         */
+        public Builder withSource(String source) {
+            this.source = source;
+            return this;
+        }
+
+        /**
+         * The sourcetype to be specified on events published to Splunk
+         * @param sourcetype
+         * @return {@code this}
+         */
+        public Builder withSourcetype(String sourcetype) {
+            this.sourcetype = sourcetype;
+            return this;
+        }
+
+        /**
+         * The Splunk index to log to
+         *
+         * @param index
+         *          the prefix for all metric names
+         * @return {@code this}
+         */
+        public Builder withIndex(String index) {
+            this.index = index;
+            return this;
+        }
+        /**
          * Convert rates to the given time unit.
          *
          * @param rateUnit
@@ -91,6 +144,17 @@ public class SplunkReporter extends ScheduledReporter {
          */
         public Builder convertRatesTo(TimeUnit rateUnit) {
             this.rateUnit = rateUnit;
+            return this;
+        }
+
+        /**
+         * Whether or not to show samples from
+         *
+         * @param showSamples
+         * @return
+         */
+        public Builder showSamples(boolean showSamples) {
+            this.showSamples = showSamples;
             return this;
         }
 
@@ -119,6 +183,17 @@ public class SplunkReporter extends ScheduledReporter {
         }
 
         /**
+         * Add an extra attribute to be supplied in the reporting object
+         * @param name Key to add in the resultant JSON
+         * @param value Value to be serialized out in resultant JSON
+         * @return {@code this}
+         */
+        public Builder addAttribute(String name, Object value) {
+            extraAttributes.put(name, value);
+            return this;
+        }
+
+        /**
          * Builds a {@link SplunkReporter} with the given properties, sending
          * metrics using the given {@link Service} client.
          *
@@ -127,12 +202,7 @@ public class SplunkReporter extends ScheduledReporter {
          * @return a {@link SplunkReporter}
          */
         public SplunkReporter build(Service splunk) {
-            return new SplunkReporter(registry,
-                    splunk,
-                    prefix,
-                    rateUnit,
-                    durationUnit,
-                    filter);
+            return new SplunkReporter(this, splunk);
         }
 
     }
