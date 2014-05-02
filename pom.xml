@@ -9,7 +9,7 @@
 
 	<groupId>io.github.zenmoto</groupId>
 	<artifactId>metrics-splunk</artifactId>
-	<version>0.0.1</version>
+	<version>0.0.1-SNAPSHOT</version>
 	<name>${project.artifactId}</name>
 	<description>A Metrics reporter for Splunk</description>
 	<url>https://github.com/zenmoto/metrics-splunk</url>
@@ -35,6 +35,16 @@
 		</license>
 	</licenses>
 	<dependencies>
+    <dependency>
+      <groupId>com.splunk</groupId>
+      <artifactId>splunk</artifactId>
+      <version>1.2.1.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.code.gson</groupId>
+      <artifactId>gson</artifactId>
+      <version>2.2.3</version>
+    </dependency>
 		<dependency>
 			<groupId>com.codahale.metrics</groupId>
 			<artifactId>metrics-core</artifactId>
@@ -78,8 +88,8 @@
 				<artifactId>maven-compiler-plugin</artifactId>
 				<version>3.1</version>
 				<configuration>
-					<source>1.7</source>
-					<target>1.7</target>
+					<source>1.6</source>
+					<target>1.6</target>
 				</configuration>
 			</plugin>
 		</plugins>
