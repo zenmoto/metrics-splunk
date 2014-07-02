@@ -1,6 +1,7 @@
 package io.github.zenmoto.metrics;
 
 import com.codahale.metrics.*;
+import com.codahale.metrics.Timer;
 import com.codahale.metrics.json.MetricsModule;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -8,9 +9,7 @@ import com.splunk.Args;
 import com.splunk.Receiver;
 import com.splunk.Service;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.SortedMap;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -38,31 +37,34 @@ public class SplunkReporter extends ScheduledReporter {
 
     @Override
     public void report(SortedMap<String, Gauge> gauges, SortedMap<String, Counter> counters, SortedMap<String, Histogram> histograms, SortedMap<String, Meter> meters, SortedMap<String, Timer> timers) {
-        Map<String, Object> result = new HashMap<String, Object>();
-        if (gauges.size() > 0) {
-            result.put("gauges", gauges);
+        if (gauges.size() >0 || counters.size() > 0 || histograms.size() > 0 || meters.size() > 0 || timers.size() > 0) {
+            List<Map<String, Object>> result = new ArrayList<Map<String, Object>>();
+            result.addAll(rearrangeMetrics(gauges, "g"));
+            result.addAll(rearrangeMetrics(counters, "c"));
+            result.addAll(rearrangeMetrics(histograms, "h"));
+            result.addAll(rearrangeMetrics(meters, "m"));
+            result.addAll(rearrangeMetrics(timers, "t"));
+            try {
+                for (Map<String, Object> e : result) {
+                    receiver.submit(index, splunkArgs, mapper.writeValueAsString(e));
+                }
+            } catch (JsonProcessingException e) {
+                throw new RuntimeException("Error in serializing metrics to JSON", e);
+                // TODO: figure out what to do here.
+            }
         }
-        if (counters.size() > 0) {
-            result.put("counters", counters);
+    }
+
+    private List<Map<String, Object>> rearrangeMetrics(Map<String, ? extends Object> metrics, String label) {
+        List<Map<String, Object>> retval = new ArrayList<Map<String, Object>>(metrics.size());
+        for (Map.Entry<String, ? extends Object> s : metrics.entrySet()) {
+            Map<String, Object> metric = new HashMap<String, Object>();
+            metric.put("name", s.getKey());
+            metric.put("val", s.getValue());
+            metric.put("type", label);
+            retval.add(metric);
         }
-        if (histograms.size() > 0) {
-            result.put("histograms", histograms);
-        }
-        if (meters.size() > 0) {
-            result.put("meters", meters);
-        }
-        if (timers.size() > 0) {
-            result.put("timers", timers);
-        }
-        for (Map.Entry<String, Object> entry : extraAttributes.entrySet()) {
-            result.put(entry.getKey(), entry.getValue());
-        }
-        try {
-            receiver.submit(index, splunkArgs, mapper.writeValueAsString(result));
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("Error in serializing metrics to JSON", e);
-            // TODO: figure out what to do here.
-        }
+        return retval;
     }
 
     /**
