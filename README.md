@@ -1,4 +1,4 @@
-A (Splunk)[http://www.splunk.com] reporter for (Metrics)[http://metrics.codahale.com/].
+A [Splunk](http://www.splunk.com) reporter for [Metrics](http://metrics.codahale.com/).
 
 ```{Java}
 
